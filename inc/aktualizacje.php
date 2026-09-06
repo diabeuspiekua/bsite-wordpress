@@ -217,3 +217,97 @@ function popraw_nazwe_katalogu( $zrodlo, $zdalne, $ulepszacz, $dodatkowe = array
 	}
 	return trailingslashit( $poprawne );
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SPRAWDZENIE Z EKRANU WTYCZEK
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ═══ WŁASNY PRZYCISK, BO WSPÓLNY NIE WYSTARCZA ═══
+ *
+ * WordPress ma „Sprawdź ponownie" na ekranie aktualizacji, ale to jest przycisk WSPÓLNY
+ * dla wszystkiego: rdzenia, motywów i wszystkich wtyczek naraz. Człowiek, który chce
+ * wiedzieć, czy JEST NOWA WERSJA TEJ wtyczki, musi po niego iść na inny ekran, kliknąć
+ * i wrócić szukać wzrokiem swojego wiersza.
+ *
+ * Przycisk stoi więc tam, gdzie pytanie powstaje - w wierszu wtyczki - i odpowiada wprost,
+ * zamiast zostawiać człowieka z domysłem, czy brak komunikatu znaczy „aktualne", czy
+ * „nie sprawdzono".
+ *
+ * Kasujemy przy tym WŁASNY bufor. Wymuszenie, które trafia na sześciogodzinną odpowiedź
+ * sprzed godzin, byłoby drugim przyciskiem, który kłamie - a jednego już dziś naprawiliśmy.
+ */
+add_filter( 'plugin_action_links_' . \BSite\Aktualizacje\uchwyt(), static function ( array $odnosniki ): array {
+	if ( ! current_user_can( 'update_plugins' ) ) {
+		return $odnosniki;
+	}
+	$adres = wp_nonce_url(
+		admin_url( 'admin-post.php?action=bsite_sprawdz_wydanie' ),
+		'bsite_sprawdz_wydanie'
+	);
+	/* Na początku listy, nie na końcu: „Dezaktywuj" i „Usuń" są tam, gdzie zawsze,
+	   a nowa pozycja nie przesuwa im miejsca pod kursorem. */
+	array_unshift( $odnosniki, '<a href="' . esc_url( $adres ) . '">Sprawdź aktualizacje</a>' );
+	return $odnosniki;
+} );
+
+add_action( 'admin_post_bsite_sprawdz_wydanie', static function (): void {
+	if ( ! current_user_can( 'update_plugins' ) || ! check_admin_referer( 'bsite_sprawdz_wydanie' ) ) {
+		wp_die( 'Brak uprawnień.' );
+	}
+
+	delete_site_transient( \BSite\Aktualizacje\PAMIEC );
+	delete_site_transient( 'update_plugins' );
+	wp_update_plugins();
+
+	$wydanie = \BSite\Aktualizacje\wydanie();
+	$nowsze  = is_array( $wydanie )
+		&& version_compare( $wydanie['wersja'], BSITE_WERSJA, '>' );
+
+	wp_safe_redirect( add_query_arg(
+		array(
+			'bsite_sprawdzono' => $nowsze ? 'nowa' : ( is_array( $wydanie ) ? 'aktualna' : 'blad' ),
+			'bsite_wersja'     => is_array( $wydanie ) ? rawurlencode( $wydanie['wersja'] ) : '',
+		),
+		admin_url( 'plugins.php' )
+	) );
+	exit;
+} );
+
+/** Wynik sprawdzenia - zdanie, a nie sama zmiana wiersza w tabeli. */
+add_action( 'admin_notices', static function (): void {
+	// phpcs:disable WordPress.Security.NonceVerification
+	if ( ! isset( $_GET['bsite_sprawdzono'] ) ) {
+		return;
+	}
+	$stan   = sanitize_key( (string) $_GET['bsite_sprawdzono'] );
+	$wersja = isset( $_GET['bsite_wersja'] ) ? sanitize_text_field( wp_unslash( (string) $_GET['bsite_wersja'] ) ) : '';
+	// phpcs:enable
+
+	switch ( $stan ) {
+		case 'nowa':
+			printf(
+				'<div class="notice notice-warning"><p>%s</p></div>',
+				sprintf(
+					/* Odnośnik prosto do aktualizacji: informacja bez drogi do działania
+					   kazałaby szukać, gdzie się teraz klika. */
+					'bSite %s jest dostępna - masz %s. <a href="%s">Przejdź do aktualizacji</a>.',
+					esc_html( $wersja ),
+					esc_html( BSITE_WERSJA ),
+					esc_url( admin_url( 'update-core.php' ) )
+				)
+			);
+			break;
+		case 'aktualna':
+			printf(
+				'<div class="notice notice-success is-dismissible"><p>%s</p></div>',
+				sprintf( 'bSite %s to najnowsze wydanie.', esc_html( BSITE_WERSJA ) )
+			);
+			break;
+		default:
+			printf(
+				'<div class="notice notice-error is-dismissible"><p>%s</p></div>',
+				'Nie udało się sprawdzić wydań bSite - witryna nie doszła do serwisu z wydaniami.'
+			);
+	}
+} );
