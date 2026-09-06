@@ -116,26 +116,16 @@ function komentarze(): ?int {
 /**
  * Nowe zgłoszenia z formularza.
  *
- * Typ `sm_zgloszenie` należy do motywu sitemanagera, nie do WordPressa - więc pytamy
- * o niego tylko wtedy, gdy istnieje. Na witrynie bez tego typu wynik to `null`, czyli
- * „nie ma czego liczyć", a nie zero.
+ * [BŁĄD, KTÓRY TO NAPRAWIA] Pierwsza wersja pytała wprost o typ `sm_zgloszenie` i pole
+ * `sm_obsluzone` - czyli o nazwy z NASZEGO motywu, wpisane do wtyczki, która ma trafić
+ * do klientów. Na cudzej witrynie ten typ nie istnieje, więc liczba zgłoszeń była tam
+ * pusta zawsze i z definicji, choć formularz działał.
+ *
+ * Teraz źródło rozpoznaje `zgloszenia.php`: zna kształt WordPressowy, a nasze nazwy
+ * dokłada motyw filtrem - tam, gdzie ich miejsce.
  */
 function zgloszenia(): ?int {
-	if ( ! post_type_exists( 'sm_zgloszenie' ) || ! current_user_can( 'manage_options' ) ) {
-		return null;
-	}
-	$zapytanie = new \WP_Query( array(
-		'post_type'      => 'sm_zgloszenie',
-		'post_status'    => array( 'publish', 'pending', 'draft' ),
-		'posts_per_page' => 1,
-		'fields'         => 'ids',
-		'meta_query'     => array( // phpcs:ignore WordPress.DB.SlowDBQuery
-			'relation' => 'OR',
-			array( 'key' => 'sm_obsluzone', 'compare' => 'NOT EXISTS' ),
-			array( 'key' => 'sm_obsluzone', 'value' => '', 'compare' => '=' ),
-		),
-	) );
-	return (int) $zapytanie->found_posts;
+	return \BSite\Zgloszenia\ile_nowych();
 }
 
 /** Kiedy ostatnio coś wyszło. Sama data, bez tytułu. */
