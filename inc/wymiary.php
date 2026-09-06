@@ -41,6 +41,11 @@ function pusty(): array {
 		'goscie'      => null,   // int   - unikalni w całym zakresie
 		'nowi'        => null,   // int   - pierwszy raz widziani w zakresie
 		'na_goscia'   => null,   // float - odsłony / goście
+		/* Sekundy. ZANIŻONE o czas spędzony na ostatniej stronie wizyty - licznik zapisuje
+		   moment odsłony, a nie czas czytania, więc po ostatniej nie ma już zdarzenia,
+		   od którego dałoby się odmierzyć. Apka podpisuje to na widgecie, bo liczba bez
+		   tego zastrzeżenia wyglądałaby na pomiar, a jest dolną granicą. */
+		'sredni_czas' => null,
 		'zrodla'      => null,   // [ ['klucz'=>'wyszukiwarki','ile'=>1240], … ]
 		'urzadzenia'  => null,
 		'kraje'       => null,
