@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       bSite
  * Description:       Łączy witrynę z aplikacją bSite. Wystawia manifest - czym ta witryna jest, jakie ma moduły i co wolno zalogowanemu.
- * Version:           0.7.0
+ * Version:           0.8.0
  * Requires at least: 6.4
  * Requires PHP:      8.1
  * Author:            Marcin
@@ -30,7 +30,7 @@ declare( strict_types=1 );
 
 defined( 'ABSPATH' ) || exit;
 
-const BSITE_WERSJA = '0.7.0';
+const BSITE_WERSJA = '0.8.0';
 
 /**
  * Wersja UMOWY, nie wtyczki.

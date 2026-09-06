@@ -57,6 +57,7 @@ function zbuduj(): array {
 		'zaplanowane'   => zaplanowane(),
 		'komentarze'    => komentarze(),
 		'zgloszenia'    => zgloszenia(),
+		'opinie'        => opinie(),
 		'ostatnia_publikacja' => ostatnia_publikacja(),
 		'kalendarz'     => kalendarz(),
 		'aktualizacje'  => aktualizacje(),
@@ -130,6 +131,39 @@ function zgloszenia(): ?int {
 }
 
 /**
+ * Opinie czekające na publikację.
+ *
+ * ═══ TA SAMA ZASADA, CO PRZY ZGŁOSZENIACH ═══
+ *
+ * Opinie to na WordPressie zawsze czyjś typ wpisu - nasz motyw ma `sm_opinia`, cudzy będzie
+ * miał swój. Wtyczka nie zna żadnej z tych nazw i nie ma powodu ich znać; źródło dokłada
+ * motyw filtrem, dokładnie jak przy zgłoszeniach.
+ *
+ * Domyślnie żadnego źródła nie ma, więc wynik to `null` - „ta witryna nie zbiera opinii",
+ * a nie „zero opinii". Aplikacja rysuje wtedy kreskę, nie zero.
+ */
+function opinie(): ?int {
+	$zrodlo = apply_filters( 'bsite_opinie_zrodlo', null );
+	if ( ! is_array( $zrodlo ) || empty( $zrodlo['typ'] ) || ! post_type_exists( $zrodlo['typ'] ) ) {
+		return null;
+	}
+	if ( ! current_user_can( 'edit_posts' ) ) {
+		return null;
+	}
+
+	/* Czekające, czyli `pending` - tak WordPress oznacza treść zgłoszoną do publikacji
+	   przez kogoś, kto sam publikować nie może. Motyw może wskazać inne statusy. */
+	$zapytanie = new \WP_Query( array(
+		'post_type'      => (string) $zrodlo['typ'],
+		'post_status'    => (array) ( $zrodlo['statusy'] ?? array( 'pending' ) ),
+		'posts_per_page' => 1,
+		'fields'         => 'ids',
+		'no_found_rows'  => false,
+	) );
+	return (int) $zapytanie->found_posts;
+}
+
+/**
  * Co i kiedy WYJDZIE - najbliższe zaplanowane wpisy.
  *
  * ═══ LISTA, NIE SAMA LICZBA ═══
@@ -152,15 +186,24 @@ function kalendarz(): ?array {
 		return null;
 	}
 
+	/* ═══ SZKICE Z DATĄ W PRZYSZŁOŚCI TEŻ SĄ W KOLEJCE ═══
+	   Redaktor, który ustawia tekstowi datę i zostawia go jako szkic, umówił się z sobą
+	   na termin dokładnie tak samo jak przy wpisie zaplanowanym - różnica jest taka, że
+	   ten pierwszy NIE wyjdzie sam. To jest właśnie ta pozycja, o której najłatwiej
+	   zapomnieć, więc pominięcie jej w kalendarzu byłoby pominięciem najważniejszej.
+
+	   Szkice bez daty (czyli z datą utworzenia w przeszłości) tu nie wchodzą - one nie
+	   są niczym umówionym, tylko zaczętą pracą, i liczy je kolumna „szkice". */
 	$wpisy = get_posts( array(
 		'post_type'      => array( 'post', 'page' ),
-		'post_status'    => 'future',
+		'post_status'    => array( 'future', 'draft' ),
 		'posts_per_page' => 10,
 		'orderby'        => 'date',
 		/* Rosnąco: najbliższe pierwsze. Malejąco - czyli tak, jak zwykle sortuje się
 		   wpisy - dałoby na górze rzecz zaplanowaną najdalej w przyszłość, czyli tę,
 		   którą trzeba zająć się najpóźniej. */
 		'order'          => 'ASC',
+		'date_query'     => array( array( 'after' => 'now', 'inclusive' => false ) ),
 	) );
 
 	$lista = array();
@@ -170,6 +213,9 @@ function kalendarz(): ?array {
 			'tytul' => mb_substr( trim( wp_strip_all_tags( get_the_title( $w ) ) ) ?: 'Bez tytułu', 0, 120 ),
 			'kiedy' => get_post_time( 'c', true, $w ) ?: null,
 			'typ'   => (string) $w->post_type,
+			/* Szkic z datą WYMAGA ręcznego wypuszczenia i apka musi to rozróżnić -
+			   inaczej człowiek zakłada, że wyjdzie samo, i tekst zostaje w szufladzie. */
+			'sam'   => 'future' === $w->post_status,
 			'panel' => get_edit_post_link( $w->ID, 'raw' ) ?: null,
 		);
 	}

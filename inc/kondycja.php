@@ -193,8 +193,35 @@ function braki(): array {
 		  WHERE p.post_status = 'publish' AND p.post_type IN ('post','page') AND m.meta_id IS NULL"
 	);
 
+	/* ═══ BEZ TAGU LICZYMY TYLKO WPISY, NIE STRONY ═══
+	   Strona „Kontakt" nie potrzebuje tagów i nigdy ich nie będzie miała - wliczona
+	   podbijałaby liczbę o rzecz, której nikt nie zamierza naprawiać, a po kilku takich
+	   pozycjach kolumna przestaje cokolwiek znaczyć. Tagi są narzędziem wpisów.
+
+	   ═══ `NOT EXISTS`, NIE `LEFT JOIN ... IS NULL` ═══
+
+	   [BŁĄD, KTÓRY TO NAPRAWIA] Pierwsza wersja szła przez `LEFT JOIN` do relacji terminów
+	   i sprawdzała `IS NULL`. Wpis ma jednak zwykle KILKA relacji - co najmniej kategorię -
+	   a każda z nich daje osobny wiersz. Wiersz kategorii nie ma dopasowania w `post_tag`,
+	   więc `IS NULL` łapał go i wpis z tagiem liczył się jako pozbawiony tagów. Próba na
+	   dwóch wpisach, z których JEDEN miał tag, dała +2 zamiast +1.
+
+	   `NOT EXISTS` pyta o istnienie choćby jednej relacji z tagiem i nie zwielokrotnia
+	   wierszy - jest odporne na to, ile innych taksonomii wisi przy wpisie. */
+	$bez_tagu = (int) $wpdb->get_var(
+		"SELECT COUNT(*) FROM {$wpdb->posts} p
+		  WHERE p.post_status = 'publish' AND p.post_type = 'post'
+		    AND NOT EXISTS (
+		        SELECT 1 FROM {$wpdb->term_relationships} tr
+		          JOIN {$wpdb->term_taxonomy} tt
+		            ON tt.term_taxonomy_id = tr.term_taxonomy_id
+		         WHERE tr.object_id = p.ID AND tt.taxonomy = 'post_tag'
+		    )"
+	);
+
 	return array(
 		'bez_zajawki' => $bez_zajawki,
 		'bez_obrazka' => $bez_obrazka,
+		'bez_tagu'    => $bez_tagu,
 	);
 }
