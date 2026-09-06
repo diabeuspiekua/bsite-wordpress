@@ -32,36 +32,17 @@ const OPCJA = 'bsite_moduly';
  * zakładką, a pusta zakładka wygląda jak awaria.
  */
 function katalog(): array {
-	return array(
-		'tresc' => array(
-			'nazwa'  => 'Treść',
-			'ikona'  => 'doc.text',
-			'wymaga' => 'edit_posts',
-			'wykryj' => static fn(): bool => true,
-		),
+	return array_merge( typy(), array(
+		/* ═══ ZGŁOSZENIA ZOSTAJĄ WPISANE, RESZTA TYPÓW NIE ═══
+		   Nie jest to niekonsekwencja. Zgłoszenia mają w tej wtyczce własną trasę, bo typ,
+		   w którym siedzą, zwykle NIE MA `show_in_rest` - torem ogólnym jest nieosiągalny.
+		   Źródło i tak rozpoznaje `zgloszenia.php` przez filtr, więc tu nie ma nazwy
+		   z żadnego motywu, tylko pytanie „czy witryna w ogóle zbiera zgłoszenia". */
 		'zgloszenia' => array(
 			'nazwa'  => 'Zgłoszenia',
 			'ikona'  => 'tray.full',
 			'wymaga' => 'manage_options',
-			'wykryj' => static fn(): bool => post_type_exists( 'sm_zgloszenie' ),
-		),
-		'opinie' => array(
-			'nazwa'  => 'Opinie',
-			'ikona'  => 'quote.bubble',
-			'wymaga' => 'edit_posts',
-			'wykryj' => static fn(): bool => post_type_exists( 'sm_opinia' ),
-		),
-		'realizacje' => array(
-			'nazwa'  => 'Realizacje',
-			'ikona'  => 'hammer',
-			'wymaga' => 'edit_posts',
-			'wykryj' => static fn(): bool => post_type_exists( 'sm_realizacja' ),
-		),
-		'oferta' => array(
-			'nazwa'  => 'Oferta',
-			'ikona'  => 'tag',
-			'wymaga' => 'edit_posts',
-			'wykryj' => static fn(): bool => post_type_exists( 'sm_oferta' ),
+			'wykryj' => static fn(): bool => null !== \BSite\Zgloszenia\zrodlo(),
 		),
 		'statystyki' => array(
 			'nazwa'  => 'Statystyki',
@@ -69,7 +50,44 @@ function katalog(): array {
 			'wymaga' => 'manage_options',
 			'wykryj' => static fn(): bool => true,
 		),
-	);
+	) );
+}
+
+/**
+ * Moduły treściowe - po jednym na WYKRYTY typ, a nie z listy.
+ *
+ * ═══ BŁĄD, KTÓRY TO NAPRAWIA ═══
+ *
+ * Katalog wymieniał `sm_zgloszenie`, `sm_opinia`, `sm_realizacja` i `sm_oferta` z nazwy.
+ * To są typy jednego motywu wpisane do wtyczki, która idzie do klientów: u każdego innego
+ * wykryłaby się wyłącznie „Treść", a jego własne typy nie miałyby jak się pokazać.
+ *
+ * Klucz ma postać `typ:<nazwa>`, bo modułem typu treści jest sam typ. Aplikacja liczy ten
+ * sam klucz po swojej stronie (`Trasa.wymaganyModul`), więc dołożenie typu u klienta nie
+ * wymaga niczego ani we wtyczce, ani w aplikacji.
+ */
+function typy(): array {
+	$wynik = array();
+	foreach ( \BSite\Typy\zbuduj()['typy'] ?? array() as $t ) {
+		$wynik[ 'typ:' . $t['nazwa'] ] = array(
+			'nazwa'  => $t['etykieta'],
+			/* ═══ IKONA PUSTA CELOWO ═══
+			   [BŁĄD, KTÓRY TO NAPRAWIA] Pierwsza wersja wstawiała tu dashicona
+			   (`dashicons-hammer`), a moduły wbudowane mają w tym samym polu symbol
+			   systemowy (`tray.full`). Jedno pole niosło dwa różne słowniki, więc aplikacja
+			   rysowałaby dashicona jako symbol Apple'a i dostawała pustkę.
+
+			   Typy mają własną trasę z pełnym opisem, łącznie z ikoną i jej przekładem
+			   (`Typ.symbol`). Powielanie tego w manifeście dawałoby dwa źródła prawdy
+			   o tej samej rzeczy - a pierwsze, które się rozjedzie, jest nie do wykrycia. */
+			'ikona'  => null,
+			'wymaga' => 'edit_posts',
+			/* Typ już przeszedł przez wykrywanie w `typy.php` - skoro się tam znalazł,
+			   to istnieje i jest w REST. Drugie sprawdzenie byłoby powtórzeniem. */
+			'wykryj' => static fn(): bool => true,
+		);
+	}
+	return $wynik;
 }
 
 /**
