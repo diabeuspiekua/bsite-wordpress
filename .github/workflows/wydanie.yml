@@ -1,0 +1,64 @@
+# Paczka wtyczki przy każdym oznaczeniu wersji.
+#
+# ═══ DLACZEGO WŁASNA PACZKA, A NIE ARCHIWUM SERWISU ═══
+#
+# GitHub sam wystawia przy wydaniu `zipball_url`, ale tamto archiwum niesie CAŁE
+# repozytorium: ten plik, README, licencję, `.gitignore`. U klienta w katalogu wtyczek
+# ma leżeć wyłącznie to, co działa - a nie nasz porządek pracy.
+#
+# ═══ KATALOG W PACZCE MUSI NAZYWAĆ SIĘ `bsite` ═══
+#
+# Nazwa katalogu wewnątrz archiwum jest tym, pod czym WordPress zainstaluje wtyczkę.
+# Archiwum rozpakowujące się do `bsite-1.2.0` daje instalację obok starej, a włączona
+# zostaje stara - aktualizacja niby przechodzi i nic nie zmienia. Wtyczka ma na to
+# zabezpieczenie po swojej stronie (`upgrader_source_selection`), ale paczka i tak ma
+# być zrobiona dobrze: to samo w dwóch miejscach, bo pomyłka jest cicha.
+
+name: Wydanie
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write
+
+jobs:
+  paczka:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sprawdź składnię PHP
+        # Paczka z błędem składni to u klienta biała strona. Sprawdzenie kosztuje
+        # sekundę i wychodzi ZANIM cokolwiek zostanie wydane.
+        run: |
+          for p in $(find . -name '*.php' -not -path './.git/*'); do
+            php -l "$p" || exit 1
+          done
+
+      - name: Sprawdź, czy wersja zgadza się ze znacznikiem
+        # Znacznik `v1.2.0` i `BSITE_WERSJA = '1.1.0'` to aktualizacja, która zainstaluje
+        # się raz i będzie się proponować w nieskończoność, bo wersja w pliku nigdy
+        # nie dogoni tej z wydania.
+        run: |
+          ZNACZNIK="${GITHUB_REF_NAME#v}"
+          W_PLIKU=$(grep -oE "BSITE_WERSJA = '[^']+'" bsite.php | grep -oE "'[^']+'" | tr -d "'")
+          echo "znacznik: $ZNACZNIK, w pliku: $W_PLIKU"
+          if [ "$ZNACZNIK" != "$W_PLIKU" ]; then
+            echo "::error::Wersja w bsite.php ($W_PLIKU) nie zgadza się ze znacznikiem ($ZNACZNIK)"
+            exit 1
+          fi
+
+      - name: Złóż paczkę
+        run: |
+          mkdir -p paczka/bsite
+          cp bsite.php README.md LICENSE paczka/bsite/
+          cp -R inc paczka/bsite/
+          cd paczka && zip -r ../bsite.zip bsite -x '*.DS_Store'
+
+      - name: Wydaj
+        uses: softprops/action-gh-release@v2
+        with:
+          files: bsite.zip
+          generate_release_notes: true
