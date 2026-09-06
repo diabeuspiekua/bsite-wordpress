@@ -156,10 +156,26 @@ function wspiera( string $typ ): array {
  */
 function policz( string $typ ): array {
 	$l = wp_count_posts( $typ );
-	return array(
+
+	$wg = array(
 		'opublikowane' => (int) ( $l->publish ?? 0 ),
 		'szkice'       => (int) ( $l->draft ?? 0 ),
 		'oczekujace'   => (int) ( $l->pending ?? 0 ),
 		'zaplanowane'  => (int) ( $l->future ?? 0 ),
+		'prywatne'     => (int) ( $l->private ?? 0 ),
+		'kosz'         => (int) ( $l->trash ?? 0 ),
 	);
+
+	/* ═══ SUMA LICZONA TU, NIE W APLIKACJI ═══
+	   Pasek filtrów pokazuje „Wszystkie 1240" obok „Szkice 38" i te liczby MUSZĄ pochodzić
+	   z jednego rachunku. Policzone po stronie aplikacji rozjechałyby się w chwili, gdy
+	   dołożymy tu status, o którym ona nie wie - a wtedy suma jest mniejsza od sumy części
+	   i wygląda na usterkę danych, nie na starszą apkę.
+
+	   Kosz świadomie POZA sumą: „wszystkie" w wp-adminie też go nie liczy, bo to rzeczy
+	   usunięte. Wliczony sprawiałby, że suma nie zgadza się z tym, co widać na liście. */
+	$wg['wszystkie'] = $wg['opublikowane'] + $wg['szkice'] + $wg['oczekujace']
+	                 + $wg['zaplanowane'] + $wg['prywatne'];
+
+	return $wg;
 }
