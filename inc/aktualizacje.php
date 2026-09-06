@@ -77,51 +77,59 @@ function wydanie(): ?array {
 		return is_array( $zapamietane ) ? $zapamietane : null;
 	}
 
-	$odpowiedz = wp_remote_get(
-		'https://api.github.com/repos/' . REPO . '/releases/latest',
+	/* ═══ BEZ API SERWISU - ONO ODMAWIA HOSTINGOM WSPÓŁDZIELONYM ═══
+	 *
+	 * [BŁĄD, KTÓRY TO NAPRAWIA] Pytaliśmy `api.github.com`. Z serwera produkcyjnego
+	 * odpowiedzią było 403 i wtyczka NIGDY nie widziała nowego wydania - a wyglądało to
+	 * jak „wszystko aktualne", bo nieudane pytanie zapisywaliśmy jako „brak wydania".
+	 *
+	 * Przyczyna jest strukturalna, nie chwilowa: niezalogowany limit tego API wynosi
+	 * 60 zapytań na godzinę NA ADRES IP, a hosting współdzielony ma jeden adres dla
+	 * wielu klientów. Limit zjadają obcy, o których nic nie wiemy. Dwie witryny, na
+	 * których to powstawało, siedzą na takim hostingu - i dokładnie tak samo siedzi
+	 * większość witryn naszych klientów.
+	 *
+	 * Strona wydań przekierowuje na `.../releases/tag/vX.Y.Z` i NIE jest liczona do tego
+	 * limitu. Wersję czytamy więc z nagłówka przekierowania, a adres paczki składamy sami:
+	 * jest przewidywalny, bo tak nazywa ją nasz własny przepis wydania.
+	 *
+	 * Tracimy przez to opis zmian - i to jest świadoma zamiana. Opis pobieramy dopiero
+	 * wtedy, gdy człowiek otworzy okno szczegółów, czyli raz i z własnej woli. */
+	$odpowiedz = wp_remote_head(
+		'https://github.com/' . REPO . '/releases/latest',
 		array(
-			'timeout' => 8,
-			'headers' => array(
-				'Accept'     => 'application/vnd.github+json',
-				/* Serwis wymaga nagłówka przedstawiającego klienta. Podajemy nazwę wtyczki
-				   i jej wersję - bez adresu witryny, patrz nagłówek pliku. */
-				'User-Agent' => 'bSite/' . BSITE_WERSJA,
-			),
+			'timeout'     => 10,
+			'redirection' => 0,
+			'headers'     => array( 'User-Agent' => 'bSite/' . BSITE_WERSJA ),
 		)
 	);
 
-	if ( is_wp_error( $odpowiedz ) || 200 !== (int) wp_remote_retrieve_response_code( $odpowiedz ) ) {
+	if ( is_wp_error( $odpowiedz ) ) {
 		set_site_transient( PAMIEC, 'brak', NA_ILE );
 		return null;
 	}
 
-	$dane = json_decode( wp_remote_retrieve_body( $odpowiedz ), true );
-	if ( ! is_array( $dane ) || empty( $dane['tag_name'] ) ) {
+	$gdzie = (string) wp_remote_retrieve_header( $odpowiedz, 'location' );
+	if ( ! preg_match( '#/tag/v?([0-9]+(?:\.[0-9]+)*)$#', $gdzie, $trafienie ) ) {
 		set_site_transient( PAMIEC, 'brak', NA_ILE );
 		return null;
 	}
 
-	/* Paczka to ZAŁĄCZNIK wydania, nie `zipball_url`. Archiwum tworzone przez serwis
-	   niesie cały porządek repozytorium - katalog `.github`, testy, pliki narzędziowe -
-	   a wtyczka u klienta ma zawierać wyłącznie to, co działa. */
-	$paczka = '';
-	foreach ( (array) ( $dane['assets'] ?? array() ) as $z ) {
-		if ( isset( $z['name'] ) && str_ends_with( (string) $z['name'], '.zip' ) ) {
-			$paczka = (string) ( $z['browser_download_url'] ?? '' );
-			break;
-		}
-	}
-	if ( '' === $paczka ) {
-		set_site_transient( PAMIEC, 'brak', NA_ILE );
-		return null;
-	}
+	$wersja = $trafienie[1];
+
+	/* Paczka to ZAŁĄCZNIK wydania, nie archiwum repozytorium: to drugie niesie cały
+	   porządek projektu - katalog `.github`, testy, pliki narzędziowe - a wtyczka
+	   u klienta ma zawierać wyłącznie to, co działa. Nazwa jest stała, bo ustala ją
+	   nasz przepis wydania. */
+	$paczka = 'https://github.com/' . REPO . '/releases/download/v' . $wersja . '/bsite.zip';
 
 	$wynik = array(
-		'wersja' => ltrim( (string) $dane['tag_name'], 'v' ),
+		'wersja' => $wersja,
 		'paczka' => $paczka,
-		'opis'   => (string) ( $dane['body'] ?? '' ),
-		'kiedy'  => (string) ( $dane['published_at'] ?? '' ),
+		'opis'   => '',
+		'kiedy'  => '',
 	);
+
 	set_site_transient( PAMIEC, $wynik, NA_ILE );
 	return $wynik;
 }
