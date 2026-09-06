@@ -56,8 +56,24 @@ function uchwyt(): string {
  * na limit czasu - czyli panel wolniejszy o kilka sekund bez żadnego powodu.
  */
 function wydanie(): ?array {
+	/* ═══ „SPRAWDŹ PONOWNIE" MA NAPRAWDĘ SPRAWDZAĆ ═══
+	 *
+	 * [BŁĄD, KTÓRY TO NAPRAWIA] WordPress przy kliknięciu „Sprawdź ponownie" kasuje SWÓJ
+	 * bufor aktualizacji i pyta wtyczki od nowa. Nasz własny sześciogodzinny bufor tego
+	 * nie zauważał i oddawał odpowiedź sprzed godzin - więc człowiek klikał, widział
+	 * „wszystko aktualne" i miał prawo sądzić, że nowego wydania nie ma.
+	 *
+	 * Wydanie opublikowane pięć minut wcześniej pojawiało się dopiero po sześciu godzinach,
+	 * bez żadnego sposobu na przyspieszenie z panelu. To nie jest ostrożność, tylko
+	 * przycisk, który kłamie.
+	 *
+	 * WordPress oznacza wymuszone sprawdzenie parametrem `force-check` na ekranie
+	 * aktualizacji. Wtedy - i tylko wtedy - pytamy serwis od nowa. */
+	// phpcs:ignore WordPress.Security.NonceVerification
+	$wymuszone = isset( $_GET['force-check'] ) && current_user_can( 'update_plugins' );
+
 	$zapamietane = get_site_transient( PAMIEC );
-	if ( false !== $zapamietane ) {
+	if ( false !== $zapamietane && ! $wymuszone ) {
 		return is_array( $zapamietane ) ? $zapamietane : null;
 	}
 
