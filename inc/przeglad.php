@@ -58,6 +58,7 @@ function zbuduj(): array {
 		'komentarze'    => komentarze(),
 		'zgloszenia'    => zgloszenia(),
 		'ostatnia_publikacja' => ostatnia_publikacja(),
+		'kalendarz'     => kalendarz(),
 		'aktualizacje'  => aktualizacje(),
 	);
 }
@@ -126,6 +127,53 @@ function komentarze(): ?int {
  */
 function zgloszenia(): ?int {
 	return \BSite\Zgloszenia\ile_nowych();
+}
+
+/**
+ * Co i kiedy WYJDZIE - najbliższe zaplanowane wpisy.
+ *
+ * ═══ LISTA, NIE SAMA LICZBA ═══
+ *
+ * Liczba zaplanowanych odpowiada na pytanie „czy coś jest przygotowane". Nie odpowiada
+ * na to, po które się naprawdę sięga: czy w przyszłym tygodniu jest luka, i czy dwa teksty
+ * nie wychodzą przypadkiem tego samego dnia. Do tego trzeba dat, więc daty tu są.
+ *
+ * ═══ TYTUŁ WOLNO, W ODRÓŻNIENIU OD ZGŁOSZEŃ ═══
+ *
+ * To jest własna treść witryny przygotowana do publikacji, nie czyjaś korespondencja.
+ * Za tydzień i tak będzie publiczna. Porównaj `zgloszenia.php`, gdzie z tego samego
+ * powodu treści NIE ma.
+ *
+ * Dziesięć pozycji, bo to jest podgląd na ekranie telefonu, a nie plan redakcyjny -
+ * ten jest w panelu i tam prowadzi odnośnik.
+ */
+function kalendarz(): ?array {
+	if ( ! current_user_can( 'edit_posts' ) ) {
+		return null;
+	}
+
+	$wpisy = get_posts( array(
+		'post_type'      => array( 'post', 'page' ),
+		'post_status'    => 'future',
+		'posts_per_page' => 10,
+		'orderby'        => 'date',
+		/* Rosnąco: najbliższe pierwsze. Malejąco - czyli tak, jak zwykle sortuje się
+		   wpisy - dałoby na górze rzecz zaplanowaną najdalej w przyszłość, czyli tę,
+		   którą trzeba zająć się najpóźniej. */
+		'order'          => 'ASC',
+	) );
+
+	$lista = array();
+	foreach ( $wpisy as $w ) {
+		$lista[] = array(
+			'id'    => (int) $w->ID,
+			'tytul' => mb_substr( trim( wp_strip_all_tags( get_the_title( $w ) ) ) ?: 'Bez tytułu', 0, 120 ),
+			'kiedy' => get_post_time( 'c', true, $w ) ?: null,
+			'typ'   => (string) $w->post_type,
+			'panel' => get_edit_post_link( $w->ID, 'raw' ) ?: null,
+		);
+	}
+	return $lista;
 }
 
 /** Kiedy ostatnio coś wyszło. Sama data, bez tytułu. */

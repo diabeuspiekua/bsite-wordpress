@@ -49,6 +49,9 @@ function pusty(): array {
 		'kampanie'    => null,
 		'czytane'     => null,   // najczęściej otwierane
 		'godziny'     => null,   // [ ['dzien'=>1..7,'godzina'=>0..23,'ile'=>int], … ]
+		/* Stare, a nadal czytane - liczone TUTAJ, nie przez analitykę.
+		   [ ['klucz'=>'/adres','ile'=>420,'tytul'=>'…','odswiezony'=>'2024-03-01T…'], … ] */
+		'stare_czytane' => null,
 	);
 }
 
@@ -68,5 +71,83 @@ function zbierz( string $od, string $do ): array {
 	/* Scalamy z pustym kształtem, żeby brak jednego wymiaru nie znaczył braku klucza.
 	   Aplikacja ma dostać komplet pól - inaczej musiałaby zgadywać, czy `null` to brak
 	   danych, czy starsza wtyczka, która o tym polu nie słyszała. */
-	return array_merge( pusty(), $wynik );
+	$wynik = array_merge( pusty(), $wynik );
+
+	$wynik['stare_czytane'] = stare_czytane( $wynik['czytane'] );
+
+	return $wynik;
+}
+
+/**
+ * STARE, A NADAL CZYTANE - teksty, które pracują mimo wieku.
+ *
+ * ═══ DLACZEGO LICZY TO WTYCZKA, A NIE ANALITYKA ═══
+ *
+ * Analityka wie, ile razy otwarto adres. Nie wie, kiedy ten tekst powstał ani kiedy
+ * ostatnio go poprawiano - to jest wiedza WordPressa. Połączenie jednego z drugim musi
+ * się więc odbyć po tej stronie; przerzucanie dat publikacji do analityki znaczyłoby
+ * dublowanie tego, co i tak stoi w bazie.
+ *
+ * ═══ PO DACIE ZMIANY, NIE PUBLIKACJI ═══
+ *
+ * Tekst sprzed trzech lat poprawiony w zeszłym miesiącu nie jest zaległością - ktoś się
+ * nim właśnie zajął. Zaległością jest ten, którego nikt nie tknął od dawna, a ludzie
+ * wciąż na niego wchodzą: to jest dokładnie ta strona, na której nieaktualna informacja
+ * robi najwięcej szkody.
+ *
+ * @param array|null $czytane Lista par `klucz` → `ile` z analityki.
+ */
+function stare_czytane( ?array $czytane ): ?array {
+	if ( empty( $czytane ) || ! current_user_can( 'edit_posts' ) ) {
+		return null;
+	}
+
+	/* Rok od ostatniej zmiany. Poniżej tego progu lista zapełniłaby się tekstami sprzed
+	   paru miesięcy, czyli takimi, o których wszyscy jeszcze pamiętają - i przestałaby
+	   pokazywać to jedno, o czym nikt nie pamięta. */
+	$prog = (int) apply_filters( 'bsite_stare_czytane_dni', 365 );
+	$teraz = time();
+	$lista = array();
+
+	foreach ( $czytane as $pozycja ) {
+		$klucz = (string) ( $pozycja['klucz'] ?? '' );
+		if ( '' === $klucz ) {
+			continue;
+		}
+
+		/* ═══ IDENTYFIKATOR PRZED ADRESEM ═══
+		   [BŁĄD, KTÓRY TO NAPRAWIA] Pierwsza wersja rozwiązywała `klucz` przez
+		   `url_to_postid()`, zakładając, że to ścieżka. Nasza analityka wstawia tam
+		   jednak TYTUŁ wpisu, więc dopasowanie nie udawało się ani razu i lista
+		   wychodziła pusta zawsze - widget bez danych, wyglądający na działający.
+
+		   Analityka, która zna numer wpisu, podaje go teraz wprost. Adres zostaje jako
+		   droga zapasowa dla liczników operujących samymi ścieżkami. */
+		$id = (int) ( $pozycja['wpis'] ?? 0 );
+		if ( 0 === $id && str_starts_with( $klucz, '/' ) ) {
+			$id = url_to_postid( home_url( $klucz ) );
+		}
+		if ( 0 === $id || 'publish' !== get_post_status( $id ) ) {
+			continue;   // adres spoza treści albo wpis, którego już nie ma
+		}
+
+		$zmieniony = get_post_modified_time( 'U', true, $id );
+		if ( ! $zmieniony || ( $teraz - (int) $zmieniony ) < $prog * DAY_IN_SECONDS ) {
+			continue;
+		}
+
+		$lista[] = array(
+			'klucz'      => $klucz,
+			'ile'        => (int) ( $pozycja['ile'] ?? 0 ),
+			'tytul'      => mb_substr( (string) get_the_title( $id ), 0, 120 ),
+			'odswiezony' => (string) get_post_modified_time( 'c', true, $id ),
+			'panel'      => get_edit_post_link( $id, 'raw' ) ?: null,
+		);
+	}
+
+	/* Kolejność po ruchu, nie po wieku. Najstarszy tekst, który nikogo nie interesuje,
+	   nie jest problemem - problemem jest ten, na który wchodzi najwięcej ludzi. */
+	usort( $lista, static fn( $a, $b ): int => $b['ile'] <=> $a['ile'] );
+
+	return array_slice( $lista, 0, 6 );
 }
