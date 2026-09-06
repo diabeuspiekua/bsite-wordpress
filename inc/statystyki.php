@@ -88,6 +88,9 @@ function zbuduj( int $dni ): array {
 			'do'           => $dzis->format( 'Y-m-d' ),
 			'dni'          => null,
 			'zrodlo'       => null,
+			/* Wymiary pytamy MIMO braku szeregu: witryna może liczyć jedno bez drugiego,
+			   a widget urządzeń nie musi czekać na wykres. */
+			'wymiary'      => \BSite\Wymiary\zbierz( $od->format( 'Y-m-d' ), $dzis->format( 'Y-m-d' ) ),
 		);
 	}
 
@@ -97,6 +100,9 @@ function zbuduj( int $dni ): array {
 		'do'           => $dzis->format( 'Y-m-d' ),
 		'dni'          => uzupelnij( $surowe, $od, $dzis ),
 		'zrodlo'       => (string) apply_filters( 'bsite_odslony_zrodlo', 'analityka witryny' ),
+		/* Wymiary tym samym żądaniem. Osobna trasa znaczyłaby drugie połączenie po to,
+		   żeby zapytać tę samą tabelę o ten sam zakres dat. */
+		'wymiary'      => \BSite\Wymiary\zbierz( $od->format( 'Y-m-d' ), $dzis->format( 'Y-m-d' ) ),
 	);
 }
 
